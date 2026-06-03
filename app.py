@@ -3,7 +3,14 @@ import pandas as pd
 import boto3
 import plotly.graph_objects as go
 from io import BytesIO
+import time
+
+# Importation de tes configurations et de ton moteur de traitement
 from config.settings import S3_ENDPOINT, AWS_ACCESS_KEY, AWS_SECRET_KEY, BUCKET_NAME
+try:
+    from src.transformer import DataTransformer
+except ImportError:
+    DataTransformer = None
 
 # 1. Production-Grade Telemetry Cyber-Console Configuration
 st.set_page_config(
@@ -41,7 +48,7 @@ st.markdown("""
             background: linear-gradient(90deg, #D31027, #EA00D9) !important;
         }
         .cyber-title {
-            color: #94A3B8; /* Correction lisibilité titre KPI */
+            color: #94A3B8;
             font-size: 11px;
             text-transform: uppercase;
             letter-spacing: 2px;
@@ -70,7 +77,7 @@ st.markdown("""
             border: 1px solid #1E2942;
             line-height: 2; 
             font-size: 14px;
-            color: #E2E8F0 !important; /* Gris très clair pour une lisibilité parfaite */
+            color: #E2E8F0 !important;
             box-shadow: 0 4px 20px rgba(0,0,0,0.3);
             transition: all 0.3s ease;
         }
@@ -120,7 +127,7 @@ st.markdown("""
         .sidebar-section-title {
             font-size: 13px;
             font-weight: 700;
-            color: #E2E8F0; /* Titres de la barre latérale plus clairs */
+            color: #E2E8F0;
             letter-spacing: 1.5px;
             margin-top: 20px;
             margin-bottom: 10px;
@@ -136,53 +143,109 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-@st.cache_data
-def load_data_from_s3():
-    """Optimized S3 Storage Tier Connector Protocol."""
-    print("[INFO] Initializing secure connection gateway to MinIO S3 Data Lake...")
+# --- EN-TÊTE FIXE DE L'APPLICATION ---
+st.markdown('<h1 style="color:#FFFFFF; font-size:36px; font-weight:800; margin-bottom:5px;">⚡ DELFI MISSION CONTROL ROOM</h1>', unsafe_allow_html=True)
+
+# Protocole de chargement des données (S3 avec Fallback Automatique)
+df = None
+s3_status_html = '<span style="color:#EF4444;font-weight:bold;">● OFFLINE [CLOUD FALLBACK]</span>'
+
+try:
+    # Tentative de connexion (timeout court pour le cloud)
     s3_client = boto3.client(
         's3', endpoint_url=S3_ENDPOINT,
-        aws_access_key_id=AWS_ACCESS_KEY, aws_secret_access_key=AWS_SECRET_KEY
+        aws_access_key_id=AWS_ACCESS_KEY, aws_secret_access_key=AWS_SECRET_KEY,
+        config=boto3.session.Config(connect_timeout=2, read_timeout=2)
     )
     s3_key = "production/year=2026/well_telemetry.parquet"
     obj = s3_client.get_object(Bucket=BUCKET_NAME, Key=s3_key)
-    return pd.read_parquet(BytesIO(obj['Body'].read()))
+    df = pd.read_parquet(BytesIO(obj['Body'].read()))
+    s3_status_html = '<span style="color:#10B981;font-weight:bold;">● ONLINE [MINIO S3 DATA LAKE]</span>'
+except Exception:
+    df = None
 
-try:
-    df = load_data_from_s3()
+# --- MODE INTERACTIF SI S3 INDISPONIBLE (SUR LE CLOUD) ---
+if df is None:
+    st.markdown("<p style='color:#64748B; font-size:14px; margin-bottom:25px;'>SECURE HYBRID DATA LAYER PIPELINE ACTIVATED</p>", unsafe_allow_html=True)
+    st.info("💡 Passerelle Data Lake locale hors ligne (mode Cloud). Veuillez alimenter le terminal de contrôle en y déposant vos données de puits.")
     
-    # --- MISSION SIDEBAR NETWORK GATEWAY ---
-    st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/b/b8/Schlumberger_logo.svg", use_container_width=True)
+    uploaded_file = st.file_uploader(
+        "INGESTION NODE : Glissez-déposez le fichier de télémétrie capteurs (.csv, .parquet)", 
+        type=["csv", "parquet"]
+    )
+    
+    if uploaded_file is not None:
+        if uploaded_file.name.endswith('.csv'):
+            df_raw = pd.read_csv(uploaded_file)
+        else:
+            df_raw = pd.read_parquet(uploaded_file)
+            
+        df_raw.columns = df_raw.columns.str.upper()
+        
+        if DataTransformer is not None:
+            with st.spinner("Exécution du pipeline de transformation algorithmique (`src/transformer.py`)..."):
+                try:
+                    transformer = DataTransformer()
+                    df = transformer.clean_and_aggregate(df_raw)
+                    df.columns = df.columns.str.upper()
+                except Exception:
+                    df = df_raw
+        else:
+            df = df_raw
+    else:
+        st.markdown("""
+        <div style="background-color:#0b1121; padding:25px; border-radius:12px; border:1px solid #16223f; margin-top:20px;">
+            <h4 style="color:#38BDF8; margin-top:0;">Configuration de Sécurité Gouvernance & Conformité</h4>
+            <p style="color:#94A3B8; font-size:13px; line-height:1.6;">
+                Afin de respecter la confidentialité des données de production de puits réels, le fichier <code>raw_well_data.csv</code> 
+                est automatiquement intercepté et protégé par les règles du fichier <code>.gitignore</code>. <br>
+                <b>Pour évaluer la console :</b> Importez n'importe quel échantillon de télémétrie structuré pour instancier les modèles graphiques en temps réel.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        st.stop()
+
+# --- TABLEAU DE BORD PRINCIPAL (UNE FOIS LE DF CHARGÉ) ---
+if df is not None:
+    # Navigation latérale
+    st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/e/e9/Schlumberger_logo.svg", use_container_width=True)
     st.sidebar.markdown("<br>", unsafe_allow_html=True)
     
     st.sidebar.markdown('<p class="sidebar-section-title">🖥️ CORE COGNITIVE NODE</p>', unsafe_allow_html=True)
-    well_list = df['WELL_BORE_CODE'].unique()
+    
+    well_col = 'WELL_BORE_CODE' if 'WELL_BORE_CODE' in df.columns else df.select_dtypes(include=['object', 'category']).columns[0]
+    well_list = df[well_col].unique()
     selected_well = st.sidebar.selectbox("TARGET WELLBORE ASSET", well_list, label_visibility="collapsed")
     
     st.sidebar.markdown("<br>", unsafe_allow_html=True)
     st.sidebar.markdown('<p class="sidebar-section-title">📡 INFRASTRUCTURE TOPOLOGY</p>', unsafe_allow_html=True)
-    st.sidebar.markdown("""
+    st.sidebar.markdown(f"""
     <div style="background-color:#0b1121; padding:15px; border-radius:8px; border:1px solid #16223f; font-size:12px; line-height: 1.6;">
-        <span style="color:#94A3B8;">GATEWAY STATUS:</span> <span style="color:#10B981;font-weight:bold;">● ONLINE [EDGE]</span><br>
-        <span style="color:#94A3B8;">STREAM OPTIMIZER:</span> <code style="color:#38BDF8;">Snappy-Parquet</code><br>
+        <span style="color:#94A3B8;">GATEWAY STATUS:</span> {s3_status_html}<br>
+        <span style="color:#94A3B8;">PIPELINE ENGINE:</span> <code style="color:#38BDF8;">src/transformer.py</code><br>
         <span style="color:#94A3B8;">METADATA LAYER:</span> <code style="color:#38BDF8;">OSDU Core Schema</code><br>
-        <span style="color:#94A3B8;">DATALAKE INSTANCE:</span> <code style="color:#A855F7;">MinIO S3 Cluster</code>
+        <span style="color:#94A3B8;">DATA ENGINE:</span> <code style="color:#A855F7;">Pandas High-Perf</code>
     </div>
     """, unsafe_allow_html=True)
     
-    df_filtered = df[df['WELL_BORE_CODE'] == selected_well].sort_values('DATEPRD')
-
-    # --- MAIN HUD INSTRUMENTATION ---
-    st.markdown('<h1 style="color:#FFFFFF; font-size:36px; font-weight:800; margin-bottom:5px;">⚡ DELFI MISSION CONTROL ROOM</h1>', unsafe_allow_html=True)
+    df_filtered = df[df[well_col] == selected_well]
+    if 'DATEPRD' in df_filtered.columns:
+        df_filtered = df_filtered.sort_values('DATEPRD')
+    
     st.markdown(f"<p style='color:#64748B; font-size:14px; margin-bottom:25px;'>CONNECTED FIELD: <span style='color:#38BDF8; font-weight:700;'>VOLVE SUBSURFACE DATASET</span> | STREAM ACTIVE: <span style='color:#38BDF8; font-weight:700;'>{selected_well}</span></p>", unsafe_allow_html=True)
 
-    # Statistical Aggregation
-    avg_pressure = df_filtered['AVG_DOWNHOLE_PRESSURE'].mean()
-    avg_temp = df_filtered['AVG_DOWNHOLE_TEMPERATURE'].mean()
-    avg_water_cut = df_filtered['WATER_CUT'].mean()
-    total_oil = df_filtered['BORE_OIL_VOL'].sum()
+    # Extraction résiliente des indicateurs
+    p_col = 'AVG_DOWNHOLE_PRESSURE' if 'AVG_DOWNHOLE_PRESSURE' in df_filtered.columns else (df_filtered.select_dtypes(include=['float64', 'int64']).columns[0] if len(df_filtered.select_dtypes(include=['float64', 'int64']).columns) > 0 else None)
+    t_col = 'AVG_DOWNHOLE_TEMPERATURE' if 'AVG_DOWNHOLE_TEMPERATURE' in df_filtered.columns else (df_filtered.select_dtypes(include=['float64', 'int64']).columns[1] if len(df_filtered.select_dtypes(include=['float64', 'int64']).columns) > 1 else None)
+    w_col = 'WATER_CUT' if 'WATER_CUT' in df_filtered.columns else (df_filtered.select_dtypes(include=['float64', 'int64']).columns[2] if len(df_filtered.select_dtypes(include=['float64', 'int64']).columns) > 2 else None)
+    o_col = 'BORE_OIL_VOL' if 'BORE_OIL_VOL' in df_filtered.columns else (df_filtered.select_dtypes(include=['float64', 'int64']).columns[3] if len(df_filtered.select_dtypes(include=['float64', 'int64']).columns) > 3 else None)
 
-    # Layout Generation: HUD Cards
+    avg_pressure = df_filtered[p_col].mean() if p_col else 0.0
+    avg_temp = df_filtered[t_col].mean() if t_col else 0.0
+    avg_water_cut = df_filtered[w_col].mean() if w_col else 0.0
+    total_oil = df_filtered[o_col].sum() if o_col else 0.0
+
+    # HUD Generation
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
     
     with kpi1:
@@ -207,7 +270,7 @@ try:
             <div class="cyber-card {alert_class}">
                 <div class="cyber-title">Calculated Water Cut</div>
                 <div class="cyber-value">{avg_water_cut:.2f} <span style="font-size:14px; color:#94A3B8; font-weight:normal;">%</span></div>
-                <div class="cyber-status" style="color:#EF4444;">⚠️ DEPLETION CRITICAL ALERT</div>
+                <div class="cyber-status" style="color:#EF4444;">⚠️ CONTROL BOUND COMPLIANCE</div>
             </div>
         """, unsafe_allow_html=True)
     with kpi4:
@@ -219,26 +282,30 @@ try:
             </div>
         """, unsafe_allow_html=True)
 
-    # --- ADVANCED HIGH-DENSITY GRAPHICS & ANALYTICAL TABS ---
+    # Onglets d'analyse
     tab_analytics, tab_gauges, tab_data_lake = st.tabs([
         "📊 ADVANCED CROSS-GRAPHICS", 
         "⭕ REAL-TIME ADVANCED GAUGES", 
         "💾 OSDU METADATA RECORD LAYER"
     ])
 
+    date_col = 'DATEPRD' if 'DATEPRD' in df_filtered.columns else df_filtered.index
+
     with tab_analytics:
         fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=df_filtered['DATEPRD'], y=df_filtered['BORE_OIL_VOL'],
-            name="Hydrocarbon Output (bbl/day)",
-            line=dict(color='#00C6FF', width=3.5), mode='lines',
-            fill='tozeroy', fillcolor='rgba(0, 198, 255, 0.02)'
-        ))
-        fig.add_trace(go.Scatter(
-            x=df_filtered['DATEPRD'], y=df_filtered['WATER_CUT'],
-            name="Water Breakthrough Ratio (%)",
-            line=dict(color='#EA00D9', width=2, dash='dash'), yaxis="y2"
-        ))
+        if o_col:
+            fig.add_trace(go.Scatter(
+                x=df_filtered[date_col], y=df_filtered[o_col],
+                name="Hydrocarbon Output (bbl/day)",
+                line=dict(color='#00C6FF', width=3.5), mode='lines',
+                fill='tozeroy', fillcolor='rgba(0, 198, 255, 0.02)'
+            ))
+        if w_col:
+            fig.add_trace(go.Scatter(
+                x=df_filtered[date_col], y=df_filtered[w_col],
+                name="Water Breakthrough Ratio (%)",
+                line=dict(color='#EA00D9', width=2, dash='dash'), yaxis="y2"
+            ))
         fig.update_layout(
             template="plotly_dark",
             paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
@@ -248,7 +315,7 @@ try:
             yaxis2=dict(title="Water Cut Scale (%)", titlefont=dict(color='#EA00D9'), tickfont=dict(color='#EA00D9'), anchor="x", overlaying="y", side="right", showgrid=False),
             height=480, margin=dict(l=10, r=10, t=10, b=10)
         )
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, use_container_width=True)
 
     with tab_gauges:
         col_g1, col_g2 = st.columns(2)
@@ -270,7 +337,7 @@ try:
                 }
             ))
             fig_g1.update_layout(paper_bgcolor="rgba(0,0,0,0)", height=320, margin=dict(t=40, b=10))
-            st.plotly_chart(fig_g1, width="stretch")
+            st.plotly_chart(fig_g1, use_container_width=True)
             
         with col_g2:
             fig_g2 = go.Figure(go.Indicator(
@@ -289,7 +356,7 @@ try:
                 }
             ))
             fig_g2.update_layout(paper_bgcolor="rgba(0,0,0,0)", height=320, margin=dict(t=40, b=10))
-            st.plotly_chart(fig_g2, width="stretch")
+            st.plotly_chart(fig_g2, use_container_width=True)
 
     with tab_data_lake:
         col_dl_left, col_dl_right = st.columns([1, 1])
@@ -309,10 +376,5 @@ try:
             st.map(map_data, zoom=5)
             
         st.markdown("<br><h3 class='section-header'>🔍 OPTIMIZED STORAGE HEAD RECORDS (TOP 5 ROW EXTRACT)</h3>", unsafe_allow_html=True)
-        st.dataframe(
-            df_filtered[['DATEPRD', 'AVG_DOWNHOLE_PRESSURE', 'BORE_OIL_VOL', 'WATER_CUT']].head(5), 
-            width="stretch"
-        )
-
-except Exception as server_error:
-    st.error(f"⚠️ [CRITICAL ARCHITECTURE EXCEPTION] Failed to map distributed data layer stream: {server_error}")
+        display_cols = [c for c in [date_col, p_col, o_col, w_col] if c is not None]
+        st.dataframe(df_filtered[display_cols].head(5), use_container_width=True)
