@@ -1,3 +1,29 @@
+## 🖥️ Application Interface Overview (Mission Control Room)
+
+![alt text](image.png)
+
+The **SLB DELFI Mission Control Room** is a production-grade monitoring console designed for real-time subsurface exploration and production tracking. It implements a secure hybrid data architecture compliant with industry metadata standards.
+
+### 🌐 Key Features & Architecture Demonstrated:
+
+* **Core Cognitive Node (Dynamic Asset Selection):** Features an interactive dropdown terminal enabling seamless filtering across active target wellbores (e.g., `NO 15/9-F-1 C`). The entire control center state recalculates on-the-fly in under 100ms.
+* **Live Infrastructure Topology Matrix (Sidebar):**
+  * **Gateway Status:** Reflects the live connection state with the local object storage tier (`ONLINE [MINIO S3 DATA LAKE]`).
+  * **Pipeline Engine:** Points directly to the automated data pipeline module (`src/transformer.py`).
+  * **Metadata Layer:** Validates structural records against the **OSDU Core Schema** specification.
+  * **Data Engine:** Leverages a high-performance **Pandas** computing abstraction.
+* **Telemetry HUD Metrics:**
+  * **Downhole Pressure Matrix:** Displays mean reservoir pressure conditions (in `bar`) with integrated link stability status checks.
+  * **Thermal Core Reservoir:** Continuous extraction of subsurface temperatures (in `°C`).
+  * **Calculated Water Cut:** Algorithmic water breakthrough ratio tracking with visual warning triggers (`⚠️ CONTROL BOUND COMPLIANCE`) if threshold limits are breached.
+  * **Export Aggregation Output:** Aggregated net hydrocarbon volume metrics formatted in barrels (`bbl`).
+* **Analytical Workspace Layout:** Built with a tabbed viewport architecture supporting rich data analysis layers:
+  * **Advanced Cross-Graphics:** Interactive dual-axis Plotly charts tracking hydrocarbon discharge rates against water breakthrough curves.
+  * **Real-Time Advanced Gauges:** Visual sensor integrity indicators.
+  * **OSDU Metadata Record Layer:** Raw structured storage log lookups.
+
+
+
 # SLB DELFI-Ready IoT Telemetry Pipeline & Mission Control
 
 ## 🎯 Project Objective
@@ -74,3 +100,18 @@ Operational HUD Features: You can now interactively swap between real-time wellb
 
 ⚠️ Chrome Optimization Notice: If Google Chrome's automatic translation system changes the dashboard text to French, click the translation icon in the top right of your browser's address bar and select "Never translate this site" to maintain the official SLB business English standard.
 
+## 📂 Repository Structure
+
+
+SLB-DELFI-PIPELINE/
+├── config/
+│   └── settings.py          # S3/MinIO environment endpoints & filesystem routing
+├── data/
+│   └── raw_well_data.csv    # Local raw telemetry data sample (protected via .gitignore)
+├── src/
+│   ├── __init__.py
+│   └── transformer.py       # Algorithmic data cleaning & OSDU mapping engine
+├── app.py                   # Main Streamlit Cyber-Console interface
+├── docker-compose.yml       # Local container infrastructure orchestration
+├── requirements.txt         # Pinned production dependency matrix
+└── README.md                # Project documentation
